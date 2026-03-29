@@ -11,7 +11,8 @@ from langgraph.checkpoint.sqlite import SqliteSaver
 from pathlib import Path
 from skills_manager.service import build_skills_service
 from sysprompt.service import build_sysprompt_service
-
+from tools.web_tools import WEB_TOOLS
+from tools.registry import register_tools, get_all_tools
 logger = get_logger(__name__)
 
 
@@ -26,7 +27,10 @@ class CustomContext:
     user_id:str
     session_id:str
 
-default_tools=[]
+
+# ── 注册全量 tools 到注册表 ──────────────────────────
+# 所有 tool 集在此统一注册，后续扩展只需增加 register_tools(XXX_TOOLS)
+register_tools(WEB_TOOLS)
 
 
 
@@ -50,7 +54,7 @@ def run_agent(user_id:str,session_id:str,query):
                     base_system_prompt=BASE_SYSTEM_PROMPT,
                 )
             ],
-            tools=default_tools,
+            tools=get_all_tools(),
             checkpointer=checkpointer,
             state_schema=CustomAgentstate,
             context_schema=CustomContext
@@ -66,6 +70,6 @@ def run_agent(user_id:str,session_id:str,query):
 
 
 if __name__=="__main__":
-    response=run_agent("小明","123","介绍一下自己")
+    response=run_agent("小明","123","上网查一下：https://langchain-doc.cn/v1/python/langchain/releases/langchain-v1.html，最新的langchain特性干了啥")
     print(response["messages"][-1])
 

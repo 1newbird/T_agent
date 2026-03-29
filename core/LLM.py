@@ -40,9 +40,9 @@ def init_embedding_model():
         return _embedding_instance
 
     try:
+        model_string = f"{settings.model_provider}:{settings.embed_model_name}"
         _embedding_instance = init_embeddings(
-            model=settings.embed_model_name,
-            model_provider=settings.model_provider,
+            model=model_string,
             base_url=settings.base_url,
             api_key=settings.embed_api_key,
         )

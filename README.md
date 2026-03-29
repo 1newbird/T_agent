@@ -31,8 +31,9 @@ T-Agent 不是一个具体的智能体应用，而是一套**通用基础架构*
 - 🧠 **记忆管理** — 短期（session 级）+ 长期（跨 session）双层记忆，关键词 + 向量混合检索，JSONL 文件持久化。
 - 🎯 **技能匹配** — 5 阶段流水线（发现 → 粗筛 → 精选 → 加载 → 组装），支持 5 种检索策略，LLM 精判，"1 主 + N 辅"注入。
 - 📝 **提示词管理** — Block 化动态组装 system prompt，解决 checkpointer 恢复时旧内容残留问题。
-- 🔌 **中间件架构** — before_agent / after_agent 生命周期钩子，业务逻辑通过中间件扩展，自带错误兜底。
-- ⚙️ **统一基础设施** — 单例 LLM 初始化、统一日志工厂、公共工具函数，避免重复造轮子。
+- 🔌 **中间件架构** — before_agent / wrap_model_call / after_agent 生命周期钩子，业务逻辑通过中间件扩展，自带错误兜底。
+- 🔧 **动态 Tool 筛选** — Skill 声明绑定的 tools，中间件在每次 model 调用前自动筛选工具子集，LLM 只看到相关工具；未声明则保留全量。
+- ⚙️ **统一基础设施** — 单例 LLM 初始化、统一日志工厂、公共工具函数、全局 Tool 注册表，避免重复造轮子。
 
 ## 🏗️ Architecture
 
@@ -44,7 +45,9 @@ T-Agent 不是一个具体的智能体应用，而是一套**通用基础架构*
                        │
           ┌────────────▼────────────┐
           │      Middleware Layer    │
-          │  before_agent / after_agent 钩子          │
+          │  before_agent    技能注入 + prompt 组装    │
+          │  wrap_model_call 动态 Tool 筛选           │
+          │  after_agent     后处理                   │
           └──┬──────────┬───────────┘
              │          │
    ┌─────────▼──┐  ┌───▼────────────┐
@@ -58,11 +61,11 @@ T-Agent 不是一个具体的智能体应用，而是一套**通用基础架构*
    │  短期 + 长期记忆     │
    └────────────────────┘
              │
-   ┌─────────▼──────────┐
-   │      core/         │
-   │  LLM · logger ·    │
-   │  config · utils    │
-   └────────────────────┘
+   ┌─────────▼──────────┐     ┌───────────────────┐
+   │      core/         │     │     tools/        │
+   │  LLM · logger ·    │     │  registry 注册表   │
+   │  config · utils    │     │  web_tools · ...  │
+   └────────────────────┘     └───────────────────┘
 ```
 
 ## 📦 Project Structure
@@ -99,10 +102,13 @@ T_agent/
 │   └── README.md
 │
 ├── middwares/                  # 中间件层
-│   └── load_skills_hooks.py    #   SkillsMiddleware（技能注入 + 错误兜底）
+│   └── load_skills_hooks.py    #   SkillsMiddleware（技能注入 + 动态 Tool 筛选 + 错误兜底）
 │
-├── tools/                      # 工具函数
-│   └── load_skills.py          #   扫描 skills/ 目录，解析 SKILL.md frontmatter
+├── tools/                      # 工具层
+│   ├── registry.py             #   全局 Tool 注册表（register / get_all / get_by_names）
+│   ├── web_tools.py            #   网络工具集（http_get, fetch_webpage, http_post）
+│   ├── load_skills.py          #   扫描 skills/ 目录，解析 SKILL.md frontmatter
+│   └── README.md               #   Tool 注册表与动态筛选使用说明
 │
 ├── skills/                     # 技能定义目录（按项目填充）
 │   └── <skill_name>/SKILL.md   #   每个技能一个子目录 + SKILL.md
@@ -177,6 +183,9 @@ skills/
 ---
 name: code_review
 description: 代码审查，检查代码质量和潜在问题
+tools:
+  - read_file
+  - lint_check
 ---
 
 ## 代码审查技能
@@ -186,6 +195,9 @@ description: 代码审查，检查代码质量和潜在问题
 2. 识别潜在 bug 和安全问题
 3. 给出改进建议
 ```
+
+- `tools` 字段可选：声明后中间件会自动筛选，LLM 只看到这些工具；不声明则保留全量工具。
+- 声明的 tool 名称必须和 `registry.py` 中注册的 `tool.name` 一致。
 
 框架会自动发现并在用户查询匹配时注入。
 
@@ -200,11 +212,52 @@ class MyCustomMiddleware(AgentMiddleware):
         ...
         return {"messages": modified_messages}
 
+    def wrap_model_call(self, request, handler):
+        # 在每次 model 调用时拦截（修改 tools、重试、缓存等）
+        ...
+        return handler(request)
+
     def after_agent(self, state, runtime):
         # 在 agent 执行后做一些事情（保存记忆、记录日志等）
         ...
         return None
 ```
+
+### 添加新的 tools
+
+1. 在 `tools/` 下新建文件，定义 tool 并导出列表：
+
+```python
+# tools/my_tools.py
+from langchain.tools import tool
+
+@tool
+def my_tool(arg: str) -> str:
+    """工具描述"""
+    ...
+
+MY_TOOLS = [my_tool]
+```
+
+2. 在 `Agent/main.py` 注册：
+
+```python
+from tools.my_tools import MY_TOOLS
+register_tools(MY_TOOLS)
+```
+
+3. （可选）在 SKILL.md 中绑定：
+
+```yaml
+---
+name: my_skill
+description: xxx
+tools:
+  - my_tool
+---
+```
+
+详细说明参见 [`tools/README.md`](tools/README.md)。
 
 ## 📚 Module Docs
 
@@ -215,6 +268,7 @@ class MyCustomMiddleware(AgentMiddleware):
 | 记忆管理 | [`memory_manager/MEMORY_MANAGER_EXAMPLE.md`](memory_manager/MEMORY_MANAGER_EXAMPLE.md) | 数据结构、存储、检索流程、可运行示例 |
 | 技能匹配 | [`skills_manager/README.md`](skills_manager/README.md) | 5 阶段流水线、检索策略、payload 格式 |
 | 提示词管理 | [`sysprompt/README.md`](sysprompt/README.md) | Block 组装、动态 vs 静态、中间件配合 |
+| 工具层 | [`tools/README.md`](tools/README.md) | Tool 注册表、动态筛选机制、扩展方法 |
 
 ## 🛣️ Roadmap
 
@@ -223,6 +277,7 @@ class MyCustomMiddleware(AgentMiddleware):
 - [x] 提示词管理模块（Block 动态组装）
 - [x] 中间件错误兜底
 - [x] 统一日志 / LLM 单例 / 公共工具函数
+- [x] 动态 Tool 筛选（Skill 绑定 tools + wrap_model_call 筛选）
 - [ ] 记忆中间件（接入 agent 生命周期）
 - [ ] API Server（FastAPI 接入层）
 - [ ] 更多检索后端（Redis / ChromaDB）

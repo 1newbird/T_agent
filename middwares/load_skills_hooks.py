@@ -1,4 +1,5 @@
 from langchain.agents.middleware import AgentMiddleware, AgentState
+from langchain.agents.middleware.types import ModelRequest
 from langchain.messages import SystemMessage
 from langgraph.runtime import Runtime
 
@@ -6,6 +7,7 @@ from core.logger import get_logger
 from skills_manager.service import SkillsService
 from skills_manager.types import SkillSelectionRequest
 from sysprompt.service import SyspromptService
+from tools.registry import get_tools_by_names
 
 logger = get_logger(__name__)
 
@@ -55,6 +57,8 @@ class SkillsMiddleware(AgentMiddleware):
                     content=skills_prompt,
                     source="skills_middleware",
                 )
+            else:
+                logger.info("本次回复无关联skill，延续以前版本")
 
             final_system_prompt = self.sysprompt_service.compose_prompt(
                 user_id=user_id,
@@ -75,3 +79,34 @@ class SkillsMiddleware(AgentMiddleware):
         except Exception:
             logger.exception("SkillsMiddleware 执行失败，跳过技能注入，使用原始 prompt 继续")
             return None
+
+    # ── 动态 Tool 筛选 ──────────────────────────────────
+    # 每次 model 调用前，根据选中 skill 声明的 tools 字段筛选工具子集。
+    # - skill 未声明 tools → 不筛选，LLM 看到全量 tools
+    # - skill 声明了 tools → 只保留声明的 tools
+    # - request.override() 返回新实例，不影响下一轮
+    def wrap_model_call(self, request: ModelRequest, handler):
+        loaded_skills = request.state.get("loaded_skills", [])
+
+        if loaded_skills:
+            primary = loaded_skills[0]
+            skill_tool_names = primary.get("metadata", {}).get("tools", [])
+
+            if skill_tool_names:
+                skill_tools = get_tools_by_names(skill_tool_names)
+                if skill_tools:
+                    logger.info(
+                        "skill '%s' 声明了 tools %s，动态筛选工具列表",
+                        primary.get("name", "unknown"),
+                        skill_tool_names,
+                    )
+                    request = request.override(tools=skill_tools)
+                else:
+                    logger.warning(
+                        "skill '%s' 声明的 tools %s 全部未注册，保留全量工具",
+                        primary.get("name", "unknown"),
+                        skill_tool_names,
+                    )
+            # else: skill 没声明 tools → 不做筛选，LLM 看到全量 tools
+
+        return handler(request)

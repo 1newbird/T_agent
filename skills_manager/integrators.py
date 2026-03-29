@@ -16,6 +16,7 @@ class StateInjectionIntegrator(SkillIntegrator):
                 "description": loaded.skill.description,
                 "path": loaded.skill.path,
                 "content": loaded.content,
+                "metadata": loaded.skill.metadata,
             }
             for loaded in load.loaded
         ]
