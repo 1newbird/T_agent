@@ -5,17 +5,14 @@ from dataclasses import dataclass
 from langchain.agents import AgentState
 from langchain.agents import create_agent
 from core.LLM import init_llm
-import logging
+from core.logger import get_logger
 from middwares.load_skills_hooks import SkillsMiddleware
 from langgraph.checkpoint.sqlite import SqliteSaver
 from pathlib import Path
 from skills_manager.service import build_skills_service
 from sysprompt.service import build_sysprompt_service
 
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(levelname)s - %(message)s'
-)
+logger = get_logger(__name__)
 
 
 #自定义状态，在messages之外的状态（动态）

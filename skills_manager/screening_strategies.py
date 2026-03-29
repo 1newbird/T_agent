@@ -1,8 +1,6 @@
-import math
-import re
-
 from langchain_core.embeddings import Embeddings
 
+from core.utils import cosine_similarity, tokenize
 from skills_manager.base import SkillRetriever, SkillSelector
 from skills_manager.types import (
     RetrievalCandidate,
@@ -14,21 +12,14 @@ from skills_manager.types import (
 )
 
 
-_WORD_RE = re.compile(r"\w+")
-
-
-def _tokenize(text: str) -> set[str]:
-    return set(_WORD_RE.findall(text.lower()))
-
-
 def _keyword_candidates(skills: list[SkillMetadata], request: SkillSelectionRequest) -> list[RetrievalCandidate]:
     normalized_query = request.query_text.lower().strip()
-    query_tokens = _tokenize(request.query_text)
+    query_tokens = tokenize(request.query_text)
     scored_candidates: list[RetrievalCandidate] = []
 
     for skill in skills:
         haystack = f"{skill.name} {skill.description}".lower()
-        skill_tokens = _tokenize(haystack)
+        skill_tokens = tokenize(haystack)
         overlap = len(query_tokens & skill_tokens)
         exact_bonus = 3 if normalized_query and normalized_query in haystack else 0
         score = overlap + exact_bonus
@@ -45,15 +36,6 @@ def _keyword_candidates(skills: list[SkillMetadata], request: SkillSelectionRequ
 
     scored_candidates.sort(key=lambda item: ((item.score or 0), item.skill.name), reverse=True)
     return scored_candidates
-
-
-def _cosine_similarity(left: list[float], right: list[float]) -> float:
-    numerator = sum(a * b for a, b in zip(left, right, strict=False))
-    left_norm = math.sqrt(sum(a * a for a in left))
-    right_norm = math.sqrt(sum(b * b for b in right))
-    if left_norm == 0 or right_norm == 0:
-        return 0.0
-    return numerator / (left_norm * right_norm)
 
 
 class PassThroughRetriever(SkillRetriever):
@@ -104,7 +86,7 @@ class EmbeddingRetriever(SkillRetriever):
         scored_candidates: list[RetrievalCandidate] = []
 
         for skill, vector in zip(skills, doc_vectors, strict=False):
-            score = _cosine_similarity(query_vector, vector)
+            score = cosine_similarity(query_vector, vector)
             if score <= 0:
                 continue
             scored_candidates.append(
@@ -293,18 +275,34 @@ class LLMSelector(SkillSelector):
         candidate_lines = [
             f"- {candidate.skill.name}: {candidate.skill.description}" for candidate in candidates
         ]
+        if request.top_k_selection == 1:
+            selection_instruction = (
+                "请从下面候选中选出 1 个与用户任务最匹配的 skill，只返回 skill 名称，不要解释。\n"
+                "如果没有任何候选与用户任务相关，请只返回一行：NONE"
+            )
+        else:
+            selection_instruction = (
+                f"请从下面候选中选出最合适的 {request.top_k_selection} 个 skill，"
+                "只返回 skill 名称，每行一个，按相关性从高到低排列，不要解释。\n"
+                "如果没有任何候选与用户任务相关，请只返回一行：NONE"
+            )
         prompt = (
             "你是一个 skills 精判器。\n"
             f"用户任务：{request.query_text}\n"
-            f"请从下面候选中选择最合适的 {request.top_k_selection} 个 skill，"
-            "只返回 skill 名称，每行一个，不要解释。\n\n"
+            f"{selection_instruction}\n\n"
             + "\n".join(candidate_lines)
         )
         response = self.llm.invoke(prompt)
         content = getattr(response, "content", response)
         if isinstance(content, list):
             content = "\n".join(str(item) for item in content)
-        lines = [line.strip().lstrip("-*") for line in str(content).splitlines() if line.strip()]
+        raw_text = str(content).strip()
+
+        # LLM 明确表示无匹配
+        if raw_text.upper() in ("NONE", "无", "没有"):
+            return SelectionResult(input_candidates_count=len(candidates), selected=[])
+
+        lines = [line.strip().lstrip("-*") for line in raw_text.splitlines() if line.strip()]
 
         selected = []
         by_name = {candidate.skill.name: candidate for candidate in candidates}
@@ -322,11 +320,5 @@ class LLMSelector(SkillSelector):
             if len(selected) >= request.top_k_selection:
                 break
 
-        if not selected:
-            fallback = candidates[: request.top_k_selection]
-            selected = [
-                SelectionItem(skill=candidate.skill, score=candidate.score, reason="fallback selection")
-                for candidate in fallback
-            ]
-
+        # LLM 返回无法解析时，不再强行 fallback，而是返回空结果
         return SelectionResult(input_candidates_count=len(candidates), selected=selected)

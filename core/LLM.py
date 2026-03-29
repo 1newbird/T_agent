@@ -1,50 +1,58 @@
 from langchain.chat_models import init_chat_model
 from langchain.embeddings import init_embeddings
-import logging
-from core.config import settings
 
-logging.basicConfig(
-    level=logging.INFO,  # 设置最低级别
-    format='%(asctime)s - %(levelname)s - %(message)s'
-)
+from core.config import settings
+from core.logger import get_logger
+
+logger = get_logger(__name__)
+
+_llm_instance = None
+_embedding_instance = None
 
 
 def init_llm():
     """
-    初始化LLM模型
-    return:LLM实例
+    初始化 LLM 模型（单例缓存，多次调用返回同一实例）。
     """
+    global _llm_instance
+    if _llm_instance is not None:
+        return _llm_instance
+
     try:
-        llm=init_chat_model(
+        _llm_instance = init_chat_model(
             model=settings.chat_model_name,
             model_provider=settings.model_provider,
             base_url=settings.base_url,
-            api_key=settings.chat_api_key
+            api_key=settings.chat_api_key,
         )
-        logging.info("模型初始化完成")
+        logger.info("LLM 模型初始化完成: %s", settings.chat_model_name)
     except Exception as e:
-        raise Exception(f"模型初始化失败：{str(e)}")
-    return llm
+        raise Exception(f"LLM 模型初始化失败：{e}") from e
+    return _llm_instance
 
 
 def init_embedding_model():
     """
-    初始化嵌入模型，供记忆检索等场景复用。
+    初始化嵌入模型（单例缓存，多次调用返回同一实例）。
     """
+    global _embedding_instance
+    if _embedding_instance is not None:
+        return _embedding_instance
+
     try:
-        embedding_model = init_embeddings(
+        _embedding_instance = init_embeddings(
             model=settings.embed_model_name,
             model_provider=settings.model_provider,
             base_url=settings.base_url,
-            api_key=settings.embed_api_key
+            api_key=settings.embed_api_key,
         )
-        logging.info("嵌入模型初始化完成")
-        logging.info(f"当前嵌入模型: {settings.embed_model_name}")
+        logger.info("嵌入模型初始化完成: %s", settings.embed_model_name)
     except Exception as e:
-        raise Exception(f"嵌入模型初始化失败：{str(e)}")
-    return embedding_model
+        raise Exception(f"嵌入模型初始化失败：{e}") from e
+    return _embedding_instance
 
-if __name__=="__main__":
-    llm=init_llm()
-    ans=llm.invoke("你好啊，你是谁")
-    print(ans)
+
+if __name__ == "__main__":
+    llm = init_llm()
+    ans = llm.invoke("你好啊，你是谁")
+    logger.info(ans)

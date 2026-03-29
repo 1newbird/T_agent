@@ -1,6 +1,11 @@
 import os
 import re
 
+from core.logger import get_logger
+
+logger = get_logger(__name__)
+
+
 def load_skills(skills_dir: str) -> list[dict]:
     """
     扫描 skills 目录，读取每个子文件夹下的 SKILL.md，
@@ -20,7 +25,7 @@ def load_skills(skills_dir: str) -> list[dict]:
         ]
     """
     if not os.path.exists(skills_dir):
-        print(f"[load_skills] 目录不存在：{skills_dir}")
+        logger.warning("目录不存在：%s", skills_dir)
         return []
 
     skills_des = []
@@ -34,7 +39,7 @@ def load_skills(skills_dir: str) -> list[dict]:
         skill_md_path = os.path.join(folder_path, "SKILL.md")
 
         if not os.path.exists(skill_md_path):
-            print(f"[load_skills] 跳过（无 SKILL.md）：{folder_name}")
+            logger.debug("跳过（无 SKILL.md）：%s", folder_name)
             continue
 
         with open(skill_md_path, "r", encoding="utf-8") as f:
@@ -44,7 +49,7 @@ def load_skills(skills_dir: str) -> list[dict]:
 
         # frontmatter 解析失败则跳过
         if not metadata.get("name") or not metadata.get("description"):
-            print(f"[load_skills] 跳过（frontmatter 缺少 name/description）：{folder_name}")
+            logger.warning("跳过（frontmatter 缺少 name/description）：%s", folder_name)
             continue
 
         skills_des.append({
@@ -53,7 +58,7 @@ def load_skills(skills_dir: str) -> list[dict]:
             "path": skill_md_path,
         })
 
-    print(f"[load_skills] 检测到 {len(skills_des)} 个 skill：{[s['name'] for s in skills_des]}")
+    logger.info("检测到 %d 个 skill：%s", len(skills_des), [s['name'] for s in skills_des])
     return skills_des
 
 

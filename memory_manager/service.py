@@ -1,5 +1,4 @@
 import datetime
-import math
 import uuid
 from pathlib import Path
 
@@ -7,6 +6,7 @@ from langchain.messages import AIMessage, HumanMessage
 from langchain_core.embeddings import Embeddings
 
 from core.LLM import init_embedding_model
+from core.utils import cosine_similarity
 from memory_manager.base import MemoryBackend, MemoryRetrievalStrategy
 from memory_manager.file_backend import FilesystemJsonlMemoryBackend
 from memory_manager.strategies import KeywordMemoryStrategy
@@ -165,7 +165,7 @@ class MemoryService:
         scored_records: list[tuple[float, MemoryRecord]] = []
 
         for record, doc_vector in zip(filtered_records, doc_vectors, strict=False):
-            score = self._cosine_similarity(query_vector, doc_vector)
+            score = cosine_similarity(query_vector, doc_vector)
             if score <= 0:
                 continue
             scored_records.append((score, record))
@@ -200,14 +200,6 @@ class MemoryService:
         if query.agent_id and record.agent_id != query.agent_id:
             return False
         return True
-
-    def _cosine_similarity(self, left: list[float], right: list[float]) -> float:
-        numerator = sum(a * b for a, b in zip(left, right, strict=False))
-        left_norm = math.sqrt(sum(a * a for a in left))
-        right_norm = math.sqrt(sum(b * b for b in right))
-        if left_norm == 0 or right_norm == 0:
-            return 0.0
-        return numerator / (left_norm * right_norm)
 
     def _looks_like_long_term_memory(self, content: str) -> bool:
         keywords = ["我喜欢", "我不喜欢", "我通常", "以后", "请你", "记住", "我的", "我是"]

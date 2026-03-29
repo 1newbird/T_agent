@@ -30,6 +30,6 @@ class Settings(BaseSettings):
 settings = Settings()
 
 if __name__ == "__main__":
-    #setting类里的参数与env里面的对齐，若env里有默认值，不是空值的，需要在类里声明，空值的不用，这里忽略大小写
-    print(settings.chat_api_key)
+    # setting 类里的参数与 env 里面的对齐，若 env 里有默认值，不是空值的，需要在类里声明，空值的不用，这里忽略大小写
     print(settings.chat_model_name)
+    print(settings.embed_model_name)

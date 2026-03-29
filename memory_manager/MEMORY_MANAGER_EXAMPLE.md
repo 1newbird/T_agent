@@ -96,7 +96,6 @@ def demo():
     # 5) 长期记忆示例（从用户消息提取“偏好/事实”）
     long_scope = MemoryScope(
         user_id="u_001",
-        session_id="s_001",
         agent_id="agent_main",
         memory_type="long_term",
     )
@@ -116,4 +115,4 @@ if __name__ == "__main__":
 
 - `build_memory_service()` 默认会初始化 embedding 模型（`core.LLM.init_embedding_model()`），若模型不可用，语义检索部分可能退化或报错，需按你的运行环境确认。
 - `build_long_term_records()` 使用关键词启发式判断“是否像长期记忆”，规则较简单。
-- `service.py` 里部分中文注释和关键词字符串存在编码异常（乱码），建议后续统一成 UTF-8 正常文本，避免长期记忆提取规则失效。
+- 长期记忆的 `MemoryScope` 不应传入 `session_id`，以保证跨会话可检索。短期记忆则需要绑定 `session_id`。

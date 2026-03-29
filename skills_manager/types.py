@@ -19,7 +19,7 @@ class SkillSelectionRequest:
     query_text: str
     screening_mode: ScreeningMode = "passthrough"
     top_k_retrieval: int = 8
-    top_k_selection: int = 3
+    top_k_selection: int = 1
     context: dict[str, Any] = field(default_factory=dict)
 
 

@@ -1,14 +1,6 @@
-import re
-
+from core.utils import tokenize
 from memory_manager.base import MemoryRetrievalStrategy
 from memory_manager.types import MemoryQuery, MemoryRecord
-
-
-_WORD_RE = re.compile(r"\w+")
-
-
-def _tokenize(text: str) -> set[str]:
-    return set(_WORD_RE.findall(text.lower()))
 
 
 class RecentMemoryStrategy(MemoryRetrievalStrategy):
@@ -31,14 +23,14 @@ class RecentMemoryStrategy(MemoryRetrievalStrategy):
 class KeywordMemoryStrategy(MemoryRetrievalStrategy):
     def retrieve(self, records: list[MemoryRecord], query: MemoryQuery) -> list[MemoryRecord]:
         normalized_query = query.query_text.lower().strip()
-        query_tokens = _tokenize(query.query_text)
+        query_tokens = tokenize(query.query_text)
         scored_records: list[tuple[int, MemoryRecord]] = []
 
         for record in records:
             if not self._matches_scope(record, query):
                 continue
             normalized_text = record.content.lower()
-            record_tokens = _tokenize(record.content)
+            record_tokens = tokenize(record.content)
             overlap = len(query_tokens & record_tokens)
             exact_bonus = 3 if normalized_query and normalized_query in normalized_text else 0
             score = overlap + exact_bonus

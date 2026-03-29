@@ -19,9 +19,14 @@ class StateInjectionIntegrator(SkillIntegrator):
             }
             for loaded in load.loaded
         ]
+        primary_skill = loaded_skills[0] if loaded_skills else None
+        auxiliary_skills = loaded_skills[1:] if len(loaded_skills) > 1 else []
+
         return IntegrationResult(
             payload={
-                "skills_prompt": self._build_skills_prompt(loaded_skills),
+                "skills_prompt": self._build_skills_prompt(primary_skill, auxiliary_skills),
+                "primary_skill": primary_skill,
+                "auxiliary_skills": auxiliary_skills,
                 "skill_candidates": [
                     {
                         "name": candidate.skill.name,
@@ -47,30 +52,31 @@ class StateInjectionIntegrator(SkillIntegrator):
             }
         )
 
-    def _build_skills_prompt(self, loaded_skills: list[dict]) -> str:
-        if not loaded_skills:
+    def _build_skills_prompt(self, primary_skill: dict | None, auxiliary_skills: list[dict]) -> str:
+        if not primary_skill:
             return ""
 
         sections = [
             "## 当前匹配到的技能",
             "以下技能是根据当前用户问题动态检索出的，请优先参考并遵循。",
             "",
+            "### 主技能：" + primary_skill["name"],
+            primary_skill["content"],
+            "",
         ]
-        for index, skill in enumerate(loaded_skills, start=1):
-            sections.extend(
-                [
-                    f"### 技能 {index}：{skill['name']}",
-                    skill["content"],
-                    "",
-                ]
-            )
+
+        if auxiliary_skills:
+            sections.append("### 备选技能（仅供参考）")
+            for skill in auxiliary_skills:
+                sections.append(f"- **{skill['name']}**：{skill['description']}")
+            sections.append("")
 
         sections.extend(
             [
                 "## 技能使用规则",
-                "- 优先遵循与当前任务最直接相关的技能要求。",
-                "- 更具体的技能要求优先于更通用的技能要求。",
-                "- 如果多个技能要求冲突，请选择最贴近当前用户意图的做法。",
+                "- 以主技能的要求为核心，严格遵循其指令。",
+                "- 备选技能仅在主技能未覆盖且与用户意图相关时参考。",
+                "- 如果主技能与备选技能冲突，以主技能为准。",
             ]
         )
         return "\n".join(sections)
