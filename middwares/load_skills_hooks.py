@@ -57,6 +57,8 @@ class SkillsMiddleware(AgentMiddleware):
                     content=skills_prompt,
                     source="skills_middleware",
                 )
+                for skill in payload.get("selected_skills", []):
+                    logger.info(f"本次激活skill：{skill['name']}")
             else:
                 logger.info("本次回复无关联skill，延续以前版本")
 
